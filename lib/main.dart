@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:localstorage/localstorage.dart';
 
 void main() => runApp(MyApp());
@@ -9,13 +10,42 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Verifique se o CPF é verdadeiro',
       debugShowCheckedModeBanner: false,
-      home: HomePeso(),
+      home: HomeCpf(),
     );
   }
 }
 
-class HomePeso extends StatelessWidget {
-  const HomePeso({
+class TodoItem {
+  String nome;
+  String cpf;
+
+  bool done;
+
+  TodoItem({required this.nome, required this.cpf, required this.done});
+
+  toJSONEncodable() {
+    Map<String, dynamic> m = new Map();
+
+    m['nome'] = nome;
+    m['cpf'] = cpf;
+    m['done'] = done;
+
+    return m;
+  }
+}
+
+class TodoList {
+  List<TodoItem> items = [];
+
+  toJSONEncodable() {
+    return items.map((item) {
+      return item.toJSONEncodable();
+    }).toList();
+  }
+}
+
+class HomeCpf extends StatelessWidget {
+  const HomeCpf({
     Key? key,
   }) : super(key: key);
 
@@ -27,16 +57,16 @@ class HomePeso extends StatelessWidget {
       ),
       body: ListView(
         children: <Widget>[
-          PesoCab(),
-          PesoForm(),
+          CpfCab(),
+          CpfForm(),
         ],
       ),
     );
   }
 }
 
-class PesoCab extends StatelessWidget {
-  const PesoCab({Key? key}) : super(key: key);
+class CpfCab extends StatelessWidget {
+  const CpfCab({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -66,24 +96,127 @@ class PesoCab extends StatelessWidget {
   }
 }
 
-class PesoForm extends StatefulWidget {
-  const PesoForm({Key? key}) : super(key: key);
-
-  @override
-  _PesoFormState createState() => _PesoFormState();
-}
-
-enum SingingSex { masculino, feminino }
-
-class _PesoFormState extends State<PesoForm> {
-  var _edNome = TextEditingController();
-  var _edCPF = TextEditingController();
-  SingingSex? _sexo = SingingSex.feminino;
-  String _mensagem = "";
+class FirstRoute extends StatelessWidget {
+  const FirstRoute({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final LocalStorage storage = new LocalStorage('some_key');
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('First Route'),
+      ),
+      body: Center(
+        child: ElevatedButton(
+          child: const Text('Open route'),
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SecondRoute()),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class SecondRoute extends StatelessWidget {
+  const SecondRoute({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final TodoList list = new TodoList();
+    final LocalStorage storage = new LocalStorage('local');
+    bool initialized = false;
+    return Scaffold(
+      appBar: new AppBar(
+        title: new Text('Lista de usuários'),
+      ),
+      body: Container(
+          padding: EdgeInsets.all(10.0),
+          constraints: BoxConstraints.expand(),
+          child: FutureBuilder(
+            future: storage.ready,
+            builder: (BuildContext context, AsyncSnapshot snapshot) {
+              if (snapshot.data == null) {
+                return Center(
+                  child: CircularProgressIndicator(),
+                );
+              }
+
+              if (!initialized) {
+                var items = storage.getItem('todos');
+                print(items);
+                if (items != null) {
+                  list.items = List<TodoItem>.from(
+                    (items as List).map(
+                      (item) => TodoItem(
+                          nome: item['nome'],
+                          cpf: item['cpf'],
+                          done: item['done']),
+                    ),
+                  );
+                }
+
+                initialized = true;
+              }
+
+              List<Widget> widgets = list.items.map((item) {
+                return CheckboxListTile(
+                  value: item.done,
+                  title: Text('Nome: ' + item.nome + ' - CPF: ' + item.cpf),
+                  selected: item.done,
+                  onChanged: (_) {},
+                );
+              }).toList();
+
+              return Column(
+                children: <Widget>[
+                  Expanded(
+                    flex: 1,
+                    child: ListView(
+                      children: widgets,
+                      itemExtent: 50.0,
+                    ),
+                  ),
+                ],
+              );
+            },
+          )),
+    );
+  }
+}
+
+class CpfForm extends StatefulWidget {
+  const CpfForm({Key? key}) : super(key: key);
+
+  @override
+  _CpfFormState createState() => _CpfFormState();
+}
+
+class _CpfFormState extends State<CpfForm> {
+  var _edNome = TextEditingController();
+  var _edCPF = TextEditingController();
+  final TodoList list = new TodoList();
+  TextEditingController controller = new TextEditingController();
+
+  final LocalStorage storage = new LocalStorage('local');
+  String _mensagem = "";
+  _addItem(String nome, String cpf) {
+    setState(() {
+      final item = new TodoItem(nome: nome, cpf: cpf, done: false);
+      list.items.add(item);
+      _saveToStorage();
+    });
+  }
+
+  _saveToStorage() {
+    storage.setItem('todos', list.toJSONEncodable());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    var items = storage.getItem('todos');
 
     return Container(
       padding: EdgeInsets.all(16),
@@ -167,7 +300,8 @@ class _PesoFormState extends State<PesoForm> {
                   setState(() {
                     _mensagem = "${_edNome.text} seu CPF " + valido.toString();
                   });
-                  //Map<String, dynamic> data = storage.getItem('key');
+
+                  _save();
                 } else {
                   setState(() {
                     _mensagem = "CPF deve possuir 11 caractéres!!!";
@@ -175,6 +309,26 @@ class _PesoFormState extends State<PesoForm> {
                 }
               },
               child: Text('Verificar',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 35,
+                  )),
+            ),
+          ),
+          Container(
+            height: 60,
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.8),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: ElevatedButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => SecondRoute()),
+                );
+              },
+              child: Text('Ver lista',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 35,
@@ -194,5 +348,10 @@ class _PesoFormState extends State<PesoForm> {
         ],
       ),
     );
+  }
+
+  void _save() {
+    _addItem(_edNome.text, _edCPF.text);
+    controller.clear();
   }
 }
